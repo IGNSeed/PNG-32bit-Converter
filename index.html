@@ -4,6 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PNG 32bit Converter</title>
+
+<!-- OGP -->
+<meta property="og:title" content="PNG 32bit Converter">
+<meta property="og:description" content="PNG画像をRGBA 32ビット（8bpc）に一括変換できる無料のブラウザツールです。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ignseed.github.io/PNG-32bit-Converter/">
+<meta property="og:image" content="Sample.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:site_name" content="PNG 32bit Converter">
+<meta property="og:locale" content="ja_JP">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PNG 32bit Converter">
+<meta name="twitter:description" content="PNG画像をRGBA 32ビット（8bpc）に一括変換できる無料のブラウザツールです。">
+<meta name="twitter:image" content="https://example.com/ogp.png">
+
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -180,11 +198,14 @@ async function convertTo32bit(file, item) {
         canvas.height = img.naturalHeight;
         const ctx = canvas.getContext('2d');
 
+        // まず元画像を描画
         ctx.drawImage(img, 0, 0);
         setPb(item, 40);
 
+        // ImageData を取得 → 各チャンネル uint8 (8bpc × 4ch = 32bit RGBA)
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
+        // 再描画（32bit RGBA として確定）
         ctx.putImageData(imageData, 0, 0);
         setPb(item, 80);
 
