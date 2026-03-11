@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PNG 32bit Converter</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+  <div class="badge">PNG CONVERTER</div>
+  <h1>PNG <span>32-bit</span> Depth</h1>
+  <p>PNG画像をRGBA 32ビット（8bpc）に一括変換</p>
+</div>
+
+<div class="container">
+  <div class="drop-zone" id="dropZone">
+    <div class="drop-icon">
+      <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="8" y="12" width="32" height="26" rx="2" stroke="#00e5ff" stroke-width="1.5"/>
+        <path d="M16 26l8-8 8 8" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="24" y1="18" x2="24" y2="34" stroke="#00e5ff" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M18 10h12" stroke="#7b2fff" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="drop-text">
+      <strong>PNG ファイルをドロップ</strong><br>
+      またはクリックしてファイルを選択<br>
+      <span style="font-size:0.75rem">複数ファイル対応 · PNG のみ</span>
+    </div>
+    <input type="file" id="fileInput" accept=".png,image/png" multiple>
+  </div>
+
+  <div class="file-list" id="fileList"></div>
+
+  <div class="info-grid" id="infoGrid" style="display:none">
+    <div class="info-card">
+      <div class="info-label">FILES</div>
+      <div class="info-value" id="countVal">0</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">CONVERTED</div>
+      <div class="info-value" id="doneVal">0</div>
+    </div>
+  </div>
+
+  <button class="convert-btn" id="convertBtn" disabled>
+    32BIT に変換してダウンロード
+  </button>
+
+  <button class="clear-btn" id="clearBtn" style="display:none">✕ クリア</button>
+
+  <div class="log" id="log" style="display:none"></div>
+</div>
+
+<script>
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const fileList   = document.getElementById('fileList');
+const convertBtn = document.getElementById('convertBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const infoGrid   = document.getElementById('infoGrid');
+const countVal   = document.getElementById('countVal');
+const doneVal    = document.getElementById('doneVal');
+const logEl      = document.getElementById('log');
+
+let files = [];
+
+// ── ドラッグ＆ドロップ ──────────────────────────
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles([...e.dataTransfer.files]);
+});
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
+
+function addFiles(newFiles) {
+  const pngs = newFiles.filter(f => f.type === 'image/png' || f.name.toLowerCase().endsWith('.png'));
+  if (!pngs.length) { addLog('PNG ファイルを選択してください', 'err'); return; }
+  pngs.forEach(f => {
+    if (files.find(x => x.file.name === f.name && x.file.size === f.size)) return;
+    files.push({ file: f, status: 'pending', elem: null });
+  });
+  renderList();
+}
+
+function renderList() {
+  fileList.innerHTML = '';
+  files.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'file-item';
+    el.innerHTML = `
+      <div>
+        <div class="file-name">${item.file.name}</div>
+        <div class="file-size">${formatSize(item.file.size)}</div>
+      </div>
+      <span class="file-status status-${item.status}">${statusLabel(item.status)}</span>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="pb${i}"></div></div>
+    `;
+    item.elem = el;
+    item.pbId = `pb${i}`;
+    fileList.appendChild(el);
+  });
+  updateUI();
+}
+
+function updateUI() {
+  const has = files.length > 0;
+  convertBtn.disabled = !has;
+  clearBtn.style.display = has ? 'block' : 'none';
+  infoGrid.style.display = has ? 'grid' : 'none';
+  countVal.textContent = files.length;
+  doneVal.textContent  = files.filter(f => f.status === 'done').length;
+}
+
+function statusLabel(s) {
+  return { pending:'PENDING', processing:'PROCESSING…', done:'DONE ✓', error:'ERROR' }[s] || s;
+}
+
+function formatSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+
+// ── 変換処理 ────────────────────────────────────
+convertBtn.addEventListener('click', async () => {
+  convertBtn.disabled = true;
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  addLog('変換開始...', 'info');
+
+  for (let i = 0; i < files.length; i++) {
+    const item = files[i];
+    if (item.status === 'done') continue;
+    setStatus(item, 'processing');
+    setPb(item, 10);
+
+    try {
+      const blob = await convertTo32bit(item.file, item);
+      setPb(item, 100);
+      setStatus(item, 'done');
+      downloadBlob(blob, item.file.name.replace(/\.png$/i, '_32bit.png'));
+      addLog(`✓ ${item.file.name}`, 'ok');
+    } catch(e) {
+      setStatus(item, 'error');
+      addLog(`✗ ${item.file.name}: ${e.message}`, 'err');
+    }
+    doneVal.textContent = files.filter(f => f.status === 'done').length;
+  }
+
+  convertBtn.disabled = false;
+  addLog('完了', 'info');
+});
+
+function setStatus(item, s) {
+  item.status = s;
+  const span = item.elem.querySelector('.file-status');
+  span.className = `file-status status-${s}`;
+  span.textContent = statusLabel(s);
+}
+
+function setPb(item, pct) {
+  const pb = document.getElementById(item.pbId);
+  if (pb) pb.style.width = pct + '%';
+}
+
+async function convertTo32bit(file, item) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+
+        ctx.drawImage(img, 0, 0);
+        setPb(item, 40);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        ctx.putImageData(imageData, 0, 0);
+        setPb(item, 80);
+
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if (blob) resolve(blob);
+          else reject(new Error('Blob 生成失敗'));
+        }, 'image/png');
+      } catch(e) {
+        URL.revokeObjectURL(url);
+        reject(e);
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像読み込み失敗')); };
+    img.src = url;
+  });
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function addLog(msg, cls='') {
+  const line = document.createElement('div');
+  line.className = 'log-line ' + cls;
+  line.textContent = '> ' + msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+clearBtn.addEventListener('click', () => {
+  files = [];
+  fileList.innerHTML = '';
+  logEl.innerHTML = '';
+  logEl.style.display = 'none';
+  fileInput.value = '';
+  updateUI();
+});
+</script>
+</body>
+</html>
